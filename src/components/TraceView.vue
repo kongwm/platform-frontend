@@ -7,7 +7,7 @@
  * 扁平结构不改、树在前端组 —— 后端保持"append-only 扁平事件"的简单。
  */
 import { computed } from 'vue'
-import type { LlmCallTrace, RunTrace, ToolCallTrace, TraceEvent } from '../types/sse'
+import type { LlmCallTrace, RunTrace, SubagentTrace, ToolCallTrace, TraceEvent } from '../types/sse'
 
 const props = defineProps<{ trace: RunTrace }>()
 
@@ -17,9 +17,15 @@ interface IterGroup {
   tools: ToolCallTrace[]
 }
 
-const groups = computed<IterGroup[]>(() => {
+/**
+ * 扁平 trace → 两层树（轮 → 1 次 LLM + 0~N 次工具）。
+ * subagent 条目不进 iteration 分组（它是整段子运行），由调用方单独渲染；
+ * 子智能体嵌套 trace 也走同一个函数 —— 一套分组逻辑复用两层。
+ */
+function groupTrace(events: TraceEvent[]): IterGroup[] {
   const map = new Map<number, IterGroup>()
-  for (const ev of props.trace.trace as TraceEvent[]) {
+  for (const ev of events) {
+    if (ev.type === 'subagent') continue
     let g = map.get(ev.iteration)
     if (!g) {
       g = { iteration: ev.iteration, tools: [] }
@@ -29,17 +35,29 @@ const groups = computed<IterGroup[]>(() => {
     else g.tools.push(ev)
   }
   return [...map.values()].sort((a, b) => a.iteration - b.iteration)
-})
+}
 
-const totalTokens = computed(() =>
-  groups.value.reduce(
-    (acc, g) =>
-      g.llm
-        ? { in: acc.in + g.llm.input_tokens, out: acc.out + g.llm.output_tokens }
-        : acc,
-    { in: 0, out: 0 },
+const groups = computed<IterGroup[]>(() => groupTrace(props.trace.trace as TraceEvent[]))
+
+const subagents = computed<SubagentTrace[]>(() =>
+  (props.trace.trace as TraceEvent[]).filter(
+    (ev): ev is SubagentTrace => ev.type === 'subagent',
   ),
 )
+
+const totalTokens = computed(() => {
+  const acc = { in: 0, out: 0 }
+  for (const ev of props.trace.trace as TraceEvent[]) {
+    if (ev.type === 'llm_call') {
+      acc.in += ev.input_tokens
+      acc.out += ev.output_tokens
+    } else if (ev.type === 'subagent') {
+      acc.in += ev.input_tokens   // 子智能体 tokens 已是本次运行的总量
+      acc.out += ev.output_tokens
+    }
+  }
+  return acc
+})
 
 const seconds = computed(() => (props.trace.wall_ms / 1000).toFixed(1))
 
@@ -59,7 +77,8 @@ function resultPreview(result: string): string {
 <template>
   <details class="trace-view">
     <summary>
-      🔬 运行轨迹 · {{ groups.length }} 轮 · {{ seconds }}s ·
+      🔬 运行轨迹 · {{ groups.length }} 轮<template v-if="subagents.length">
+      · {{ subagents.length }} 个子智能体</template> · {{ seconds }}s ·
       ↑{{ totalTokens.in }} ↓{{ totalTokens.out }} tokens
     </summary>
     <div v-for="g in groups" :key="g.iteration" class="iter">
@@ -81,6 +100,37 @@ function resultPreview(result: string): string {
         <pre class="detail">{{ resultPreview(t.result) }}</pre>
       </details>
     </div>
+
+    <!-- 子智能体子运行（P7.6）：嵌套 details，内部复用同一套 iteration 分组 -->
+    <details v-for="sub in subagents" :key="sub.id" class="iter subagent">
+      <summary>
+        <span class="icon">🤖</span>
+        <code>{{ sub.name }}</code>
+        <span class="meta">{{ sub.iterations }} 轮 ·
+          {{ (sub.wall_ms / 1000).toFixed(1) }}s ·
+          ↑{{ sub.input_tokens }} ↓{{ sub.output_tokens }}</span>
+      </summary>
+      <div class="sub-task">{{ sub.task }}</div>
+      <div v-for="g in groupTrace(sub.trace)" :key="g.iteration" class="iter">
+        <div class="iter-head">第 {{ g.iteration }} 轮</div>
+
+        <div v-if="g.llm" class="row llm">
+          <span class="icon">🧠</span>
+          <code>{{ g.llm.model }}</code>
+          <span class="meta">{{ stopLabel(g.llm.stop_reason) }} · {{ g.llm.wall_ms }}ms ·
+            ↑{{ g.llm.input_tokens }} ↓{{ g.llm.output_tokens }}</span>
+        </div>
+
+        <details v-for="(t, i) in g.tools" :key="i" class="row tool">
+          <summary>
+            <span class="icon">🔧</span>
+            <code>{{ t.tool }}</code>
+            <span class="meta">{{ t.latency_ms }}ms</span>
+          </summary>
+          <pre class="detail">{{ resultPreview(t.result) }}</pre>
+        </details>
+      </div>
+    </details>
   </details>
 </template>
 
@@ -112,6 +162,20 @@ summary:hover {
   font-weight: 600;
   color: #94a3b8;
   margin: 4px 0;
+}
+.subagent > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #475569;
+}
+.sub-task {
+  font-size: 11px;
+  color: #9ca3af;
+  padding: 2px 10px 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .row {
   display: flex;

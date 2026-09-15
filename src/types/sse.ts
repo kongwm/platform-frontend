@@ -130,7 +130,24 @@ export interface ToolCallTrace {
   latency_ms: number
 }
 
-export type TraceEvent = LlmCallTrace | ToolCallTrace
+/**
+ * 子智能体运行数据（P7.6 扩展）：整体嵌入主 run 的 trace。
+ * 过程消息不进会话历史（隔离不变），但已结束的观测数据要进 trace ——
+ * 否则"派活才是大头"的 token/耗时就是黑盒。id 与 subagent_start/result 事件对号。
+ */
+export interface SubagentTrace {
+  type: 'subagent'
+  id: string
+  name: string
+  task: string
+  iterations: number
+  wall_ms: number
+  input_tokens: number
+  output_tokens: number
+  trace: TraceEvent[]   // 子循环自己的扁平 trace（同主循环格式）
+}
+
+export type TraceEvent = LlmCallTrace | ToolCallTrace | SubagentTrace
 
 /** 一轮 run 的轨迹整包（done 事件实时带 / 历史接口按轮返回） */
 export interface RunTrace {
