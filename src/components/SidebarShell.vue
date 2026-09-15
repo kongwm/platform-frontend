@@ -20,7 +20,10 @@ async function onRename(id: string, current: string) {
 }
 
 async function onDelete(id: string, title: string) {
-  if (confirm(`删除会话「${title}」？消息将一并删除`)) await convs.remove(id)
+  if (confirm(`删除会话「${title}」？消息将一并删除`)) {
+    await chat.closeSession(id)   // 后台流也要先取消，避免 run 往已删会话写孤儿行
+    await convs.remove(id)
+  }
 }
 
 async function onNewProject() {
@@ -77,7 +80,10 @@ function fmtTokens(n: number): string {
           :class="{ active: c.id === convs.activeId }"
           @click="chat.loadConversation(c.id)"
         >
-          <div class="conv-title">{{ c.title }}</div>
+          <div class="conv-title">
+            {{ c.title }}
+            <span v-if="chat.sessionStreaming(c.id)" class="live-dot" title="正在生成（后台）"></span>
+          </div>
           <div class="conv-meta">
             <span>↑{{ fmtTokens(c.input_tokens) }} ↓{{ fmtTokens(c.output_tokens) }}</span>
             <span class="conv-actions">
@@ -194,6 +200,20 @@ h1 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 后台生成中的呼吸灯：并行流状态对用户可见（否则"切走了还在跑"像丢了） */
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: live-pulse 1.2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
 .conv-meta {
   display: flex;
