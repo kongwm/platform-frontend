@@ -3,8 +3,8 @@ import { onMounted, ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useConversationsStore } from '../stores/conversations'
 
-const props = defineProps<{ view: 'chat' | 'kb' | 'mcp' | 'insights' }>()
-const emit = defineEmits<{ (e: 'switch-view', v: 'chat' | 'kb' | 'mcp' | 'insights'): void }>()
+const props = defineProps<{ view: 'chat' | 'kb' | 'memory' | 'mcp' | 'insights' }>()
+const emit = defineEmits<{ (e: 'switch-view', v: 'chat' | 'kb' | 'memory' | 'mcp' | 'insights'): void }>()
 
 const chat = useChatStore()
 const convs = useConversationsStore()
@@ -112,6 +112,7 @@ function fmtTokens(n: number): string {
     <div class="sidebar-footer">
       <div class="view-switch">
         <button :class="{ on: props.view === 'kb' }" @click="emit('switch-view', 'kb')">📚 知识库</button>
+        <button :class="{ on: props.view === 'memory' }" @click="emit('switch-view', 'memory')">🧠 记忆</button>
         <button :class="{ on: props.view === 'mcp' }" @click="emit('switch-view', 'mcp')">🔌 MCP</button>
         <button :class="{ on: props.view === 'insights' }" @click="emit('switch-view', 'insights')">📊 评测</button>
         <button :class="{ on: props.view === 'chat' }" @click="emit('switch-view', 'chat')">💬 对话</button>
