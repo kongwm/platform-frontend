@@ -49,7 +49,7 @@ function fmtTokens(n: number): string {
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>AI Agent 平台</h1>
-      <button class="new-chat" @click="chat.newSession()">＋ 新对话</button>
+      <button class="new-chat" @click="chat.newSession(); emit('switch-view', 'chat')">＋ 新对话</button>
     </div>
 
     <div class="sidebar-body">
@@ -61,7 +61,7 @@ function fmtTokens(n: number): string {
             <button
               v-if="group.project"
               title="在此项目下新建会话"
-              @click.stop="chat.newSession(group.project!.id)"
+              @click.stop="chat.newSession(group.project!.id); emit('switch-view', 'chat')"
             >＋</button>
             <button
               v-if="group.project"
@@ -78,7 +78,7 @@ function fmtTokens(n: number): string {
           :key="c.id"
           class="conv-item"
           :class="{ active: c.id === convs.activeId }"
-          @click="chat.loadConversation(c.id)"
+          @click="chat.loadConversation(c.id); emit('switch-view', 'chat')"
         >
           <div class="conv-title">
             {{ c.title }}
