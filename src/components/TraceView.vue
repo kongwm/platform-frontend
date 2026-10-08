@@ -7,7 +7,7 @@
  * 扁平结构不改、树在前端组 —— 后端保持"append-only 扁平事件"的简单。
  */
 import { computed } from 'vue'
-import type { LlmCallTrace, RunTrace, SubagentTrace, ToolCallTrace, TraceEvent } from '../types/sse'
+import type { GuardrailTrace, LlmCallTrace, RunTrace, SubagentTrace, ToolCallTrace, TraceEvent } from '../types/sse'
 
 const props = defineProps<{ trace: RunTrace }>()
 
@@ -20,12 +20,13 @@ interface IterGroup {
 /**
  * 扁平 trace → 两层树（轮 → 1 次 LLM + 0~N 次工具）。
  * subagent 条目不进 iteration 分组（它是整段子运行），由调用方单独渲染；
+ * guardrail 条目（P7.7 L5）不依附任何轮次（run 开始时记的），也单独渲染；
  * 子智能体嵌套 trace 也走同一个函数 —— 一套分组逻辑复用两层。
  */
 function groupTrace(events: TraceEvent[]): IterGroup[] {
   const map = new Map<number, IterGroup>()
   for (const ev of events) {
-    if (ev.type === 'subagent') continue
+    if (ev.type === 'subagent' || ev.type === 'guardrail') continue
     let g = map.get(ev.iteration)
     if (!g) {
       g = { iteration: ev.iteration, tools: [] }
@@ -42,6 +43,13 @@ const groups = computed<IterGroup[]>(() => groupTrace(props.trace.trace as Trace
 const subagents = computed<SubagentTrace[]>(() =>
   (props.trace.trace as TraceEvent[]).filter(
     (ev): ev is SubagentTrace => ev.type === 'subagent',
+  ),
+)
+
+/** 注入告警（P7.7 L5）：run 开始时命中护栏规则的记录 */
+const guardrails = computed<GuardrailTrace[]>(() =>
+  (props.trace.trace as TraceEvent[]).filter(
+    (ev): ev is GuardrailTrace => ev.type === 'guardrail',
   ),
 )
 
@@ -81,6 +89,13 @@ function resultPreview(result: string): string {
       · {{ subagents.length }} 个子智能体</template> · {{ seconds }}s ·
       ↑{{ totalTokens.in }} ↓{{ totalTokens.out }} tokens
     </summary>
+    <!-- 注入告警横幅（P7.7 L5）：不属于任何轮次，置顶渲染 -->
+    <div v-for="(g, i) in guardrails" :key="`gw-${i}`" class="row guardrail" :class="{ high: g.risk === 'high' }">
+      <span class="icon">{{ g.risk === 'high' ? '🛡️' : '⚠️' }}</span>
+      <span>检测到疑似提示注入（{{ g.risk === 'high' ? '高危' : '低危' }}）：</span>
+      <span class="rules">{{ g.rules.join('、') }}</span>
+    </div>
+
     <div v-for="g in groups" :key="g.iteration" class="iter">
       <div class="iter-head">第 {{ g.iteration }} 轮</div>
 
@@ -91,11 +106,12 @@ function resultPreview(result: string): string {
           ↑{{ g.llm.input_tokens }} ↓{{ g.llm.output_tokens }}</span>
       </div>
 
-      <details v-for="(t, i) in g.tools" :key="i" class="row tool">
+      <details v-for="(t, i) in g.tools" :key="i" class="row tool" :class="{ dangerous: t.risk === 'high' }">
         <summary>
-          <span class="icon">🔧</span>
+          <span class="icon">{{ t.risk === 'high' ? '⚡' : '🔧' }}</span>
           <code>{{ t.tool }}</code>
           <span class="meta">{{ t.latency_ms }}ms</span>
+          <span v-if="t.risk === 'high'" class="risk-tag">危险操作</span>
         </summary>
         <pre class="detail">{{ resultPreview(t.result) }}</pre>
       </details>
@@ -199,6 +215,30 @@ summary:hover {
 }
 .meta {
   color: #9ca3af;
+}
+/* P7.7 L5：注入告警横幅 / 危险工具标记 */
+.row.guardrail {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #92400e;
+  background: #fef3c7;
+}
+.row.guardrail.high {
+  color: #991b1b;
+  background: #fee2e2;
+}
+.row.guardrail .rules {
+  font-weight: 600;
+}
+.risk-tag {
+  font-size: 10px;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.row.tool.dangerous > summary code {
+  color: #b91c1c;
 }
 .detail {
   font-family: 'SF Mono', Menlo, monospace;

@@ -125,6 +125,7 @@ export interface LlmCallTrace {
   output_tokens: number
 }
 
+/** 危险工具调用（写操作）：L5 打的 risk 标记，TraceView 警示色渲染 */
 export interface ToolCallTrace {
   type: 'tool_call'
   iteration: number
@@ -132,6 +133,7 @@ export interface ToolCallTrace {
   input: Record<string, unknown>
   result: string
   latency_ms: number
+  risk?: 'high'
 }
 
 /**
@@ -151,7 +153,14 @@ export interface SubagentTrace {
   trace: TraceEvent[]   // 子循环自己的扁平 trace（同主循环格式）
 }
 
-export type TraceEvent = LlmCallTrace | ToolCallTrace | SubagentTrace
+/** 注入扫描告警（P7.7 L5）：run 开始时命中护栏规则即记一条，随 trace 落库 */
+export interface GuardrailTrace {
+  type: 'guardrail'
+  risk: 'low' | 'high'
+  rules: string[]
+}
+
+export type TraceEvent = LlmCallTrace | ToolCallTrace | SubagentTrace | GuardrailTrace
 
 /** 一轮 run 的轨迹整包（done 事件实时带 / 历史接口按轮返回） */
 export interface RunTrace {
