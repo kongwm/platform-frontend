@@ -52,9 +52,13 @@ export interface LlmCallEvent {
   usage: { input_tokens: number; output_tokens: number }
 }
 
+/** 错误事件（P7.7 新契约）：细节已脱敏 —— message 是归类后的固定短文案，
+ * id 是 8 位关联码（报障提供它，运维 grep 日志得完整 traceback）。
+ * message 旧字段保留为兼容（两引擎过渡期可能混发旧形状） */
 export interface SseErrorEvent {
   event: 'error'
-  message: string
+  error?: { id: string; category: string; message: string; tool?: string }
+  message?: string
 }
 
 /** 会话产出物（P4）：PDF/图表文件，聊天内展示可下载 */

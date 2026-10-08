@@ -150,7 +150,9 @@ export const useChatStore = defineStore('chat', () => {
             v.pendingAsk = { question: ev.question, fields: ev.fields ?? [] }
             break
           case 'error':
-            v.error = ev.message
+            // P7.7 新契约：脱敏错误体 {id, category, message}；旧形状（裸
+            // message）过渡期兼容。展示取归类短文案，id 供报障用
+            v.error = ev.error?.message ?? ev.message ?? '未知错误'
             break
           case 'interrupted':
             // 后端已在安全点退出、部分回答已落库 —— 打个视觉标记即可
