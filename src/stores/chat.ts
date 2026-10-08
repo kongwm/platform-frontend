@@ -15,7 +15,7 @@
 
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
-import { cancelChat, streamChat } from '../api/chat'
+import { approveChat, cancelChat, streamChat } from '../api/chat'
 import { fetchMessages } from '../api/conversations'
 import { useConversationsStore } from './conversations'
 import { adaptHistory } from '../utils/historyAdapter'
@@ -149,6 +149,12 @@ export const useChatStore = defineStore('chat', () => {
             assistant.askUser = { question: ev.question, fields: ev.fields ?? [] }
             v.pendingAsk = { question: ev.question, fields: ev.fields ?? [] }
             break
+          case 'approval_request':
+            // 危险工具被拦截（P7.7 L3）：挂审批卡片，done 随后收尾本轮流
+            assistant.approval = {
+              tool: ev.tool, input: ev.input, tool_use_id: ev.tool_use_id,
+            }
+            break
           case 'error':
             // P7.7 新契约：脱敏错误体 {id, category, message}；旧形状（裸
             // message）过渡期兼容。展示取归类短文案，id 供报障用
@@ -179,6 +185,30 @@ export const useChatStore = defineStore('chat', () => {
       clearGuards(v)
       v.streaming = false
     }
+  }
+
+  /** 审批卡片回应（P7.7 L3）：确认 = 先写一次性批准标记再续发消息让模型
+   *  重调工具；取消 = 不写标记直接发拒绝消息。都作为下一轮普通消息走，
+   *  与 ask_user 的"当轮收尾、下一轮衔接"同一套机制 */
+  async function respondApproval(approved: boolean) {
+    const v = active.value
+    // 找最近一条待处理的审批卡片（resolved 未置位的）
+    const holder = [...v.messages].reverse().find((m) => m.approval && !m.approval.resolved)
+    if (!holder?.approval) return
+    const sid = sessionId.value
+    if (!sid) return   // 审批必然发生在已落库会话（前面已有对话轮）
+    try {
+      await approveChat(sid, approved)
+    } catch (e) {
+      v.error = e instanceof Error ? e.message : String(e)
+      return
+    }
+    holder.approval.resolved = 'replay'   // 按钮用掉后卡片转为只读
+    await sendMessage(
+      approved
+        ? '【审批】用户已确认该操作，请继续执行。'
+        : '【审批】用户取消了该操作，请不要执行，简单告知用户已取消即可。',
+    )
   }
 
   /** 停止按钮：协作式取消为主（部分回答落库），超时后硬断连接兜底。
@@ -257,5 +287,5 @@ export const useChatStore = defineStore('chat', () => {
     if (sessionId.value === id) newSession(conversations.pendingProjectId)
   }
 
-  return { sessionId, messages, isStreaming, lastUsage, lastError, pendingAsk, sendMessage, stop, newSession, loadConversation, sessionStreaming, closeSession }
+  return { sessionId, messages, isStreaming, lastUsage, lastError, pendingAsk, sendMessage, respondApproval, stop, newSession, loadConversation, sessionStreaming, closeSession }
 })

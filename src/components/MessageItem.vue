@@ -4,9 +4,22 @@ import MarkdownView from './MarkdownView.vue'
 import SubagentSteps from './SubagentSteps.vue'
 import ToolSteps from './ToolSteps.vue'
 import TraceView from './TraceView.vue'
+import { useChatStore } from '../stores/chat'
 
 const props = defineProps<{ message: UiMessage }>()
 const apiBase = 'http://localhost:8000'
+const chat = useChatStore()
+
+/** 审批入参摘要：挑人能读懂的字段（title/content/keyword…），其余 JSON 化 */
+function approvalSummary(input: Record<string, unknown>): string {
+  const known = ['title', 'content', 'keyword', 'name', 'text', 'query']
+  const parts: string[] = []
+  for (const k of known) {
+    if (input[k]) parts.push(`${k}: ${String(input[k]).slice(0, 80)}`)
+  }
+  if (!parts.length) parts.push(JSON.stringify(input).slice(0, 120))
+  return parts.join(' · ')
+}
 </script>
 
 <template>
@@ -30,6 +43,27 @@ const apiBase = 'http://localhost:8000'
         </li>
       </ul>
       <div class="ask-hint">请在下方输入框直接回答</div>
+    </div>
+
+    <!-- 危险操作审批卡片（P7.7 L3）：实时事件可交互，历史回放只读 -->
+    <div v-if="message.approval" class="approval-card">
+      <div class="approval-title">🛡️ 危险操作需要你的确认</div>
+      <div class="approval-tool">
+        Agent 请求执行 <code>{{ message.approval.tool }}</code>
+      </div>
+      <div class="approval-input">{{ approvalSummary(message.approval.input) }}</div>
+      <template v-if="!message.approval.resolved">
+        <div class="approval-actions">
+          <button class="btn approve" :disabled="chat.isStreaming" @click="chat.respondApproval(true)">
+            确认执行
+          </button>
+          <button class="btn decline" :disabled="chat.isStreaming" @click="chat.respondApproval(false)">
+            取消
+          </button>
+        </div>
+        <div class="approval-hint">该操作会写入外部系统，确认前不会执行</div>
+      </template>
+      <div v-else class="approval-hint">已处理（历史记录）</div>
     </div>
 
     <!-- 运行轨迹（P7）：实时 done 带回 / 历史接口回放，正文之下、附件之上 -->
@@ -103,6 +137,69 @@ const apiBase = 'http://localhost:8000'
   font-size: 12px;
 }
 .ask-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* === 危险操作审批卡片（P7.7 L3）=== */
+.approval-card {
+  max-width: 78%;
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.approval-title {
+  font-weight: 600;
+  color: #991b1b;
+  margin-bottom: 4px;
+}
+.approval-tool code {
+  background: #fee2e2;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.approval-input {
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 12px;
+  word-break: break-all;
+}
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.approval-actions .btn {
+  border-radius: 6px;
+  border: 1px solid;
+  padding: 4px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn.approve {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.btn.approve:disabled {
+  background: #fca5a5;
+  border-color: #fca5a5;
+  cursor: not-allowed;
+}
+.btn.decline {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #374151;
+}
+.btn.decline:disabled {
+  color: #d1d5db;
+  cursor: not-allowed;
+}
+.approval-hint {
   margin-top: 6px;
   font-size: 12px;
   color: #9ca3af;

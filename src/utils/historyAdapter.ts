@@ -55,6 +55,16 @@ export function adaptHistory(
         if (tc) {
           tc.status = b.is_error ? 'error' : 'done'
           tc.content = String(b.content ?? '')
+          // P7.7 L3：被审批门拦下的调用（占位结果以【等待审批】开头）不按
+          // 工具步骤展示，转成只读审批卡片 —— 与实时流的 approval_request
+          // 渲染同源。后续真正执行的调用不受影响（结果无此前缀）
+          if (tc.content.startsWith('【等待审批】') && prev) {
+            prev.approval = {
+              tool: tc.name, input: tc.input,
+              tool_use_id: tc.tool_use_id, resolved: 'replay',
+            }
+            prev.toolCalls = prev.toolCalls.filter((t) => t !== tc)
+          }
         }
       }
       continue

@@ -14,6 +14,7 @@ export type SseEvent =
   | SubagentStartEvent
   | SubagentResultEvent
   | AskUserEvent
+  | ApprovalRequestEvent
   | SseErrorEvent
   | InterruptedEvent
   | DoneEvent
@@ -109,6 +110,15 @@ export interface AskUserEvent {
   fields: AskField[]
 }
 
+/** 危险操作审批（P7.7 L3）：危险工具被拦截未执行，等用户确认。
+ * 确认 → POST /api/approvals + 续发"已确认"消息，模型重调工具放行 */
+export interface ApprovalRequestEvent {
+  event: 'approval_request'
+  tool: string
+  input: Record<string, unknown>
+  tool_use_id: string
+}
+
 /** 用户点了停止：后端已在安全点退出，部分回答已落库（done 随后必到） */
 export interface InterruptedEvent {
   event: 'interrupted'
@@ -196,5 +206,12 @@ export interface UiMessage {
   artifacts?: Artifact[]   // 该消息产出的文件（P4）
   subagents?: SubagentCall[]   // 该消息派发的子智能体（P5）
   askUser?: { question: string; fields: AskField[] }   // 该消息向用户发起的提问（P7.5）
+  approval?: {   // 该消息触发的危险操作审批（P7.7 L3）
+    tool: string
+    input: Record<string, unknown>
+    tool_use_id: string
+    /** undefined=待处理（可交互）；'replay'=历史回放（只读展示） */
+    resolved?: 'replay'
+  }
   trace?: RunTrace         // 产生该消息那轮 run 的运行轨迹（P7）
 }

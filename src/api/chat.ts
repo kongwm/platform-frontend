@@ -81,3 +81,17 @@ export async function cancelChat(sessionId: string): Promise<boolean> {
   const data = await resp.json()
   return data.cancelled === true
 }
+
+/**
+ * 危险操作审批（P7.7 L3）—— 用户点"确认执行"时先写一次性批准标记，
+ * 随后由 store 续发"已确认"消息让模型重调工具（标记在执行时消费）。
+ * 拒绝不写标记（审批门默认拒绝：无标记即拦截），前端直接发拒绝消息。
+ */
+export async function approveChat(sessionId: string, approved: boolean): Promise<void> {
+  const resp = await fetch(`${API_BASE}/api/approvals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, approved }),
+  })
+  if (!resp.ok) throw new Error(`审批请求失败: HTTP ${resp.status}`)
+}
